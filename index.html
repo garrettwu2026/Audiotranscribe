@@ -200,17 +200,22 @@
             }
         }
 
-        // Google Gemini 模組
+        // Google Gemini 模組 (已修正 JSON Schema 與動態 MIME Type)
         async function callGemini(blob, key) {
             const reader = new FileReader();
             reader.readAsDataURL(blob);
             reader.onloadend = async () => {
                 const base64Data = reader.result.split(',')[1];
+                
+                // 動態取得正確的 MIME Type，避免 iOS/Android 格式不相容
+                const actualMimeType = mediaRecorder.mimeType || 'audio/webm';
+
                 const payload = {
                     contents: [{
                         parts: [
                             { text: "這是一段台灣口音的語音，可能夾雜英文。請轉錄為繁體中文，只需輸出結果，確保語句通順，不需加入任何額外的解釋或說明標籤。" },
-                            { inline_data: { mime_type: "audio/webm", data: base64Data } }
+                            // 修正：Google API 嚴格要求 camelCase (inlineData, mimeType)
+                            { inlineData: { mimeType: actualMimeType, data: base64Data } }
                         ]
                     }]
                 };
@@ -221,7 +226,12 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(payload)
                     });
-                    if (!res.ok) throw new Error(res.status);
+                    
+                    if (!res.ok) {
+                        const errorMsg = await res.text();
+                        throw new Error(`API 錯誤碼: ${res.status}, 詳情: ${errorMsg}`);
+                    }
+                    
                     const data = await res.json();
                     if (data.candidates && data.candidates[0].content.parts[0].text) {
                         updateText(data.candidates[0].content.parts[0].text.trim());
@@ -229,12 +239,11 @@
                         updateText("無法解析語音，請再說一次。");
                     }
                 } catch (e) { 
-                    updateText("Gemini 連線錯誤或金鑰無效"); 
-                    console.error(e);
+                    updateText("Gemini 連線錯誤，請檢查網路或金鑰。"); 
+                    console.error("Gemini 核心錯誤:", e);
                 }
             };
         }
-
         // 狀態機控制
         recordBtn.addEventListener('click', async () => {
             if (!mediaRecorder) await initAudio();
