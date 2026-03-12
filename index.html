@@ -3,39 +3,28 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>AI 語音溝通板 (雙引擎版)</title>
+    <title>語音溝通板</title>
     <style>
         :root {
-            --bg-color: #0F0F0F;
-            --text-color: #F0F0F0;
-            --accent-openai: #10a37f;
-            --accent-gemini: #4285f4;
-            --btn-recording: #FF3B30;
+            --bg-color: #121212;
+            --text-color: #FFFFFF;
+            --btn-idle: #1E88E5;
+            --btn-recording: #E53935;
         }
         body {
-            margin: 0; background: var(--bg-color); color: var(--text-color);
+            margin: 0; background-color: var(--bg-color); color: var(--text-color);
             font-family: system-ui, -apple-system, 'PingFang TC', sans-serif;
             display: flex; flex-direction: column; height: 100vh; overflow: hidden;
         }
         
-        /* 頂部雙引擎切換區 */
         #header {
-            display: flex; justify-content: space-around; align-items: center; 
-            padding: 12px; background: #1A1A1A; border-bottom: 1px solid #333; z-index: 10;
+            padding: 10px; background: #1A1A1A; border-bottom: 1px solid #333; 
+            text-align: right; z-index: 10;
         }
-        .provider-btn {
-            padding: 8px 16px; border-radius: 20px; border: 2px solid transparent;
-            background: #333; color: #AAA; font-weight: bold; cursor: pointer; transition: 0.2s;
-            font-size: 14px;
-        }
-        .provider-btn.active[data-type="openai"] { border-color: var(--accent-openai); color: white; background: #154d3f; }
-        .provider-btn.active[data-type="gemini"] { border-color: var(--accent-gemini); color: white; background: #1a3a6d; }
-
         #clear-keys {
-            color: #888; text-decoration: underline; cursor: pointer; font-size: 12px; padding: 5px;
+            color: #666; text-decoration: underline; cursor: pointer; font-size: 14px; padding: 5px;
         }
 
-        /* 動態文字顯示區域 */
         #text-container {
             flex: 1; padding: 5vw; display: flex; align-items: center; justify-content: center;
             overflow: hidden; text-align: center; word-break: break-all;
@@ -44,53 +33,40 @@
             width: 100%; font-weight: 700; transition: font-size 0.2s ease-out;
         }
 
-        /* 底部控制區：縮減上下留白 */
+        /* 底部控制區：優化比例，保留視覺空間 */
         #controls {
-            padding: 15px 20px; 
-            background: #1A1A1A; 
-            display: flex; 
-            flex-direction: column; 
-            align-items: center;
-            box-shadow: 0 -5px 15px rgba(0,0,0,0.3); 
-            padding-bottom: calc(15px + env(safe-area-inset-bottom));
+            padding: 20px; background-color: #1E1E1E; display: flex; justify-content: center;
+            box-shadow: 0 -5px 15px rgba(0,0,0,0.4); padding-bottom: calc(20px + env(safe-area-inset-bottom));
         }
-
-        /* 錄音按鈕：縮小體積但維持膠囊比例 */
+        
+        /* 縮小化按鈕設計 */
         #record-btn {
-            width: 60vw; /* 從 85vw 縮小，釋放兩側空間 */
-            max-width: 300px; 
-            height: 70px; /* 從 100px 降低，釋放垂直閱讀空間 */
-            border-radius: 35px; /* 配合高度調整圓角 */
-            border: none; 
-            font-size: 22px; /* 字體微調縮小 */
-            font-weight: 900; 
-            color: white;
-            background: var(--accent-openai); 
-            box-shadow: 0 4px 10px rgba(0,0,0,0.3); /* 減輕陰影重量感 */
-            transition: all 0.2s ease;
+            width: 65vw; max-width: 350px; height: 75px; 
+            border: none; border-radius: 40px; background-color: var(--btn-idle);
+            color: white; font-size: 24px; font-weight: bold;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3); transition: all 0.2s ease;
         }
-        #record-btn.recording { background: var(--btn-recording); animation: pulse 1s infinite; }
-        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(0.98); } 100% { transform: scale(1); } }
+        #record-btn.recording {
+            background-color: var(--btn-recording); animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(0.95); } 100% { transform: scale(1); } }
     </style>
 </head>
 <body>
 
     <div id="header">
-        <div class="provider-btn active" data-type="openai">OpenAI</div>
-        <div class="provider-btn" data-type="gemini">Gemini</div>
-        <span id="clear-keys" onclick="clearKeys()">重設金鑰</span>
+        <span id="clear-keys" onclick="clearKey()">重設系統金鑰</span>
     </div>
 
     <div id="text-container">
-        <div id="text-display">請點擊下方開始說話</div>
+        <div id="text-display">請點擊下方按鈕開始說話</div>
     </div>
 
     <div id="controls">
-        <button id="record-btn">按住說話 (或點擊)</button>
+        <button id="record-btn">按住說話</button>
     </div>
 
     <script>
-        let currentProvider = 'openai';
         let mediaRecorder;
         let audioChunks = [];
         let isRecording = false;
@@ -99,6 +75,7 @@
         const textDisplay = document.getElementById('text-display');
         const textContainer = document.getElementById('text-container');
 
+        // 動態字體縮放
         function adjustFontSize() {
             const text = textDisplay.innerText;
             const len = text.length;
@@ -125,72 +102,54 @@
             adjustFontSize();
         }
 
-        document.querySelectorAll('.provider-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                document.querySelectorAll('.provider-btn').forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-                currentProvider = btn.dataset.type;
-                recordBtn.style.backgroundColor = currentProvider === 'openai' ? 'var(--accent-openai)' : 'var(--accent-gemini)';
-                updateText(`已切換至 ${currentProvider.toUpperCase()}`);
-            });
-        });
-
+        // 金鑰管理
         const getApiKey = () => {
-            const key = localStorage.getItem(`${currentProvider}_api_key`);
+            let key = localStorage.getItem('whisper_api_key');
             if (!key) {
-                const input = prompt(`請輸入 ${currentProvider.toUpperCase()} API Key:\n(僅儲存於本機端)`);
-                if (input) {
-                    localStorage.setItem(`${currentProvider}_api_key`, input.trim());
-                    return input.trim();
+                key = prompt("請輸入 OpenAI API Key:\n(僅儲存於本設備)");
+                if (key && key.startsWith('sk-')) {
+                    localStorage.setItem('whisper_api_key', key.trim());
                 } else {
-                    alert("未輸入金鑰，系統將無法運作。");
+                    alert("金鑰格式錯誤，請重新整理網頁。");
                     return null;
                 }
             }
             return key;
         };
 
-        const clearKeys = () => {
-            localStorage.removeItem('openai_api_key');
-            localStorage.removeItem('gemini_api_key');
-            alert('所有金鑰已清除。');
+        const clearKey = () => {
+            localStorage.removeItem('whisper_api_key');
+            alert('金鑰已清除。');
             location.reload();
         };
 
+        // 音訊引擎初始化
         async function initAudio() {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
                 mediaRecorder = new MediaRecorder(stream);
                 mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
                 mediaRecorder.onstop = async () => {
-                    // 【修正點 1】動態獲取瀏覽器真實錄音格式 (解決 iOS/Android 格式差異)
                     const actualMimeType = mediaRecorder.mimeType || 'audio/webm';
                     const audioBlob = new Blob(audioChunks, { type: actualMimeType });
                     audioChunks = [];
-                    await processAudio(audioBlob);
+                    await processWithWhisper(audioBlob);
                 };
             } catch (e) {
-                updateText("系統錯誤：麥克風授權失敗");
-                console.error(e);
+                updateText("麥克風授權失敗，請檢查瀏覽器設定。");
+                console.error("Audio Init Error:", e);
             }
         }
 
-        async function processAudio(blob) {
+        // Whisper 處理邏輯
+        async function processWithWhisper(blob) {
             const apiKey = getApiKey();
             if (!apiKey) return;
             
-            updateText("AI 解析語意中...");
+            updateText("正在轉成文字...");
 
-            if (currentProvider === 'openai') {
-                await callOpenAI(blob, apiKey);
-            } else {
-                await callGemini(blob, apiKey);
-            }
-        }
-
-        async function callOpenAI(blob, key) {
             const formData = new FormData();
-            formData.append('file', blob, 'audio.webm'); // OpenAI 隨便塞個檔名即可
+            formData.append('file', blob, 'audio.webm');
             formData.append('model', 'whisper-1');
             formData.append('language', 'zh');
             formData.append('prompt', '繁體中文，台灣口音，中英夾雜。');
@@ -198,63 +157,24 @@
             try {
                 const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
                     method: 'POST',
-                    headers: { 'Authorization': `Bearer ${key}` },
+                    headers: { 'Authorization': `Bearer ${apiKey}` },
                     body: formData
                 });
-                if (!res.ok) throw new Error(res.status);
+                
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.error?.message || `HTTP ${res.status}`);
+                }
+                
                 const data = await res.json();
-                updateText(data.text || "未能辨識文字");
+                updateText(data.text || "未能聽清楚，請再說一次。");
             } catch (e) { 
-                updateText("OpenAI 連線錯誤"); 
+                updateText(`系統錯誤: ${e.message}`); 
+                console.error("Whisper Error:", e);
             }
         }
 
-        async function callGemini(blob, key) {
-            const reader = new FileReader();
-            reader.readAsDataURL(blob);
-            reader.onloadend = async () => {
-                const base64Data = reader.result.split(',')[1];
-                
-                // 【修正點 2】淨化 MIME Type：去除 ';codecs=opus' 等 Google 拒收的後綴
-                let cleanMimeType = blob.type.split(';')[0];
-                if (!cleanMimeType) cleanMimeType = 'audio/webm';
-
-                const payload = {
-                    contents: [{
-                        parts: [
-                            { text: "這是一段台灣口音的語音，可能夾雜英文。請轉錄為繁體中文，只需輸出結果，確保語句通順，不需加入任何額外的解釋或說明標籤。" },
-                            { inlineData: { mimeType: cleanMimeType, data: base64Data } }
-                        ]
-                    }]
-                };
-
-                try {
-                 const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload)
-                    });
-                    
-                    // 【修正點 3】穿透式錯誤報告：若 Google 拒絕，直接顯示拒絕理由
-                    if (!res.ok) {
-                        const errorData = await res.json();
-                        throw new Error(errorData.error?.message || `HTTP ${res.status}`);
-                    }
-                    
-                    const data = await res.json();
-                    if (data.candidates && data.candidates[0].content.parts[0].text) {
-                        updateText(data.candidates[0].content.parts[0].text.trim());
-                    } else {
-                        updateText("無法解析語音，請再說一次。");
-                    }
-                } catch (e) { 
-                    // 將真實的 Google 報錯訊息印在畫面上
-                    updateText(`Gemini 錯誤: ${e.message}`); 
-                    console.error("Gemini API Error:", e);
-                }
-            };
-        }
-
+        // UI 狀態控制
         recordBtn.addEventListener('click', async () => {
             if (!mediaRecorder) await initAudio();
             if (!mediaRecorder) return; 
@@ -263,10 +183,10 @@
                 mediaRecorder.start();
                 recordBtn.innerText = "停止錄音";
                 recordBtn.classList.add('recording');
-                updateText("正在聆聽...");
+                updateText("聆聽中...");
             } else {
                 mediaRecorder.stop();
-                recordBtn.innerText = "按住說話 (或點擊)";
+                recordBtn.innerText = "按住說話";
                 recordBtn.classList.remove('recording');
             }
             isRecording = !isRecording;
