@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>語音溝通板</title>
+    <style>
+        :root {
+            --bg-color: #121212;
+            --text-color: #FFFFFF;
+            --btn-idle: #1E88E5;
+            --btn-recording: #E53935;
+        }
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: 'PingFang TC', 'Heiti TC', 'Microsoft JhengHei', sans-serif;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+        #text-display {
+            flex: 1;
+            padding: 5vw;
+            /* 針對長輩設計的動態巨大字體，vmin 確保直橫向皆清晰 */
+            font-size: 8vmin; 
+            line-height: 1.4;
+            overflow-y: auto;
+            word-wrap: break-word;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+        }
+        #controls {
+            height: 25vh;
+            min-height: 150px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: #1E1E1E;
+            padding-bottom: env(safe-area-inset-bottom);
+        }
+        #record-btn {
+            width: 80vw;
+            max-width: 400px;
+            height: 12vh;
+            min-height: 80px;
+            border: none;
+            border-radius: 50px;
+            background-color: var(--btn-idle);
+            color: white;
+            font-size: 6vmin;
+            font-weight: bold;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.5);
+            transition: all 0.2s ease;
+        }
+        #record-btn.recording {
+            background-color: var(--btn-recording);
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(0.95); }
+            100% { transform: scale(1); }
+        }
+        .status-text {
+            font-size: 4vmin;
+            color: #AAAAAA;
+            margin-top: 10px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="text-display">請按下方按鈕開始說話...</div>
+    <div id="controls">
+        <button id="record-btn">按住說話 (或點擊)</button>
+    </div>
+
+    <script>
+        // ==========================================
+        // 系統設定區：請在此填入你的 OpenAI API Key
+        // ==========================================
+        const OPENAI_API_KEY = 'sk-請將此處替換為你的真實API_KEY'; 
+        
+        const recordBtn = document.getElementById('record-btn');
+        const textDisplay = document.getElementById('text-display');
+        
+        let mediaRecorder;
+        let audioChunks = [];
+        let isRecording = false;
+
+        // 初始化麥克風權限與錄音器
+        async function initAudio() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+
+                mediaRecorder.ondataavailable = event => {
+                    if (event.data.size > 0) audioChunks.push(event.data);
+                };
+
+                mediaRecorder.onstop = async () => {
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' }); // iOS Safari 也支援 webm 或會自動降級
+                    audioChunks = [];
+                    await processAudioWithAI(audioBlob);
+                };
+            } catch (err) {
+                textDisplay.innerHTML = `<span style="color: #E53935;">麥克風授權失敗或不支援</span><br><span style="font-size: 4vmin;">請確認瀏覽器設定</span>`;
+                console.error('Audio init failed:', err);
+            }
+        }
+
+        // 呼叫 OpenAI Whisper API
+        async function processAudioWithAI(audioBlob) {
+            textDisplay.innerHTML = `<span style="color: #AAAAAA;">AI 辨識中...</span>`;
+            
+            const formData = new FormData();
+            formData.append('file', audioBlob, 'record.webm');
+            formData.append('model', 'whisper-1');
+            formData.append('language', 'zh');
+            formData.append('prompt', '這是一段台灣口音的語音，可能中英夾雜，請輸出繁體中文。');
+
+            try {
+                const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}` },
+                    body: formData
+                });
+
+                const result = await response.json();
+                
+                if (result.text) {
+                    textDisplay.innerText = result.text;
+                } else if (result.error) {
+                    textDisplay.innerHTML = `<span style="color: #E53935;">API 錯誤: ${result.error.message}</span>`;
+                } else {
+                    textDisplay.innerText = "沒有聽清楚，請再說一次。";
+                }
+            } catch (error) {
+                textDisplay.innerHTML = `<span style="color: #E53935;">網路連線錯誤</span>`;
+                console.error('API call failed:', error);
+            }
+        }
+
+        // 按鈕事件綁定 (支援點擊與長按邏輯)
+        function toggleRecording() {
+            if (!mediaRecorder) return;
+            
+            if (!isRecording) {
+                mediaRecorder.start();
+                isRecording = true;
+                recordBtn.classList.add('recording');
+                recordBtn.innerText = '停止並辨識';
+                textDisplay.innerHTML = `<span style="color: #E53935;">聆聽中...</span>`;
+            } else {
+                mediaRecorder.stop();
+                isRecording = false;
+                recordBtn.classList.remove('recording');
+                recordBtn.innerText = '按住說話 (或點擊)';
+            }
+        }
+
+        recordBtn.addEventListener('click', () => {
+            if (!mediaRecorder) initAudio();
+            toggleRecording();
+        });
+
+        // 啟動時預先請求麥克風權限
+        window.addEventListener('load', initAudio);
+    </script>
+</body>
+</html>
