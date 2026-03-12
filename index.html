@@ -83,96 +83,118 @@
     </div>
 
     <script>
-        // ==========================================
-        // 系統設定區：請在此填入你的 OpenAI API Key
-        // ==========================================
-        const OPENAI_API_KEY = 'sk-請將此處替換為你的真實API_KEY'; 
-        
-        const recordBtn = document.getElementById('record-btn');
-        const textDisplay = document.getElementById('text-display');
-        
-        let mediaRecorder;
-        let audioChunks = [];
-        let isRecording = false;
+       // ==========================================
+// 核心邏輯：API Key 終端儲存機制
+// ==========================================
+let apiKey = localStorage.getItem('whisper_api_key');
 
-        // 初始化麥克風權限與錄音器
-        async function initAudio() {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                mediaRecorder = new MediaRecorder(stream);
-
-                mediaRecorder.ondataavailable = event => {
-                    if (event.data.size > 0) audioChunks.push(event.data);
-                };
-
-                mediaRecorder.onstop = async () => {
-                    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' }); // iOS Safari 也支援 webm 或會自動降級
-                    audioChunks = [];
-                    await processAudioWithAI(audioBlob);
-                };
-            } catch (err) {
-                textDisplay.innerHTML = `<span style="color: #E53935;">麥克風授權失敗或不支援</span><br><span style="font-size: 4vmin;">請確認瀏覽器設定</span>`;
-                console.error('Audio init failed:', err);
-            }
+function checkApiKey() {
+    if (!apiKey) {
+        apiKey = prompt("安全驗證：請輸入 OpenAI API Key。\n(此金鑰將僅儲存於本設備中)");
+        if (apiKey && apiKey.startsWith('sk-')) {
+            localStorage.setItem('whisper_api_key', apiKey);
+            alert("設定成功！您可以開始使用了。");
+        } else {
+            alert("金鑰格式錯誤或未輸入，系統將無法運作。請重新整理網頁。");
+            apiKey = null;
         }
+    }
+}
 
-        // 呼叫 OpenAI Whisper API
-        async function processAudioWithAI(audioBlob) {
-            textDisplay.innerHTML = `<span style="color: #AAAAAA;">AI 辨識中...</span>`;
-            
-            const formData = new FormData();
-            formData.append('file', audioBlob, 'record.webm');
-            formData.append('model', 'whisper-1');
-            formData.append('language', 'zh');
-            formData.append('prompt', '這是一段台灣口音的語音，可能中英夾雜，請輸出繁體中文。');
+// 覆寫原有常數設定
+const OPENAI_API_KEY = () => apiKey; 
 
-            try {
-                const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-                    method: 'POST',
-                    headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}` },
-                    body: formData
-                });
+const recordBtn = document.getElementById('record-btn');
+const textDisplay = document.getElementById('text-display');
 
-                const result = await response.json();
-                
-                if (result.text) {
-                    textDisplay.innerText = result.text;
-                } else if (result.error) {
-                    textDisplay.innerHTML = `<span style="color: #E53935;">API 錯誤: ${result.error.message}</span>`;
-                } else {
-                    textDisplay.innerText = "沒有聽清楚，請再說一次。";
-                }
-            } catch (error) {
-                textDisplay.innerHTML = `<span style="color: #E53935;">網路連線錯誤</span>`;
-                console.error('API call failed:', error);
-            }
-        }
+let mediaRecorder;
+let audioChunks = [];
+let isRecording = false;
 
-        // 按鈕事件綁定 (支援點擊與長按邏輯)
-        function toggleRecording() {
-            if (!mediaRecorder) return;
-            
-            if (!isRecording) {
-                mediaRecorder.start();
-                isRecording = true;
-                recordBtn.classList.add('recording');
-                recordBtn.innerText = '停止並辨識';
-                textDisplay.innerHTML = `<span style="color: #E53935;">聆聽中...</span>`;
-            } else {
-                mediaRecorder.stop();
-                isRecording = false;
-                recordBtn.classList.remove('recording');
-                recordBtn.innerText = '按住說話 (或點擊)';
-            }
-        }
+async function initAudio() {
+    checkApiKey(); // 啟動時先檢查金鑰
+    if(!apiKey) return;
 
-        recordBtn.addEventListener('click', () => {
-            if (!mediaRecorder) initAudio();
-            toggleRecording();
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream);
+
+        mediaRecorder.ondataavailable = event => {
+            if (event.data.size > 0) audioChunks.push(event.data);
+        };
+
+        mediaRecorder.onstop = async () => {
+            const audioBlob = new Blob(audioChunks, { type: 'audio/webm' }); 
+            audioChunks = [];
+            await processAudioWithAI(audioBlob);
+        };
+    } catch (err) {
+        textDisplay.innerHTML = `<span style="color: #E53935;">麥克風授權失敗</span><br><span style="font-size: 4vmin;">請確認設定</span>`;
+    }
+}
+
+async function processAudioWithAI(audioBlob) {
+    if(!apiKey) { checkApiKey(); return; }
+
+    textDisplay.innerHTML = `<span style="color: #AAAAAA;">AI 辨識中...</span>`;
+    
+    const formData = new FormData();
+    formData.append('file', audioBlob, 'record.webm');
+    formData.append('model', 'whisper-1');
+    formData.append('language', 'zh');
+    formData.append('prompt', '這是一段台灣口音的語音，可能中英夾雜，請輸出繁體中文。');
+
+    try {
+        const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${OPENAI_API_KEY()}` }, // 動態取得 Key
+            body: formData
         });
 
-        // 啟動時預先請求麥克風權限
-        window.addEventListener('load', initAudio);
+        if (response.status === 401) {
+            textDisplay.innerHTML = `<span style="color: #E53935;">API Key 無效或已過期，請清除瀏覽器資料後重試。</span>`;
+            localStorage.removeItem('whisper_api_key'); // 自動清除無效 Key
+            apiKey = null;
+            return;
+        }
+
+        const result = await response.json();
+        
+        if (result.text) {
+            textDisplay.innerText = result.text;
+        } else if (result.error) {
+            textDisplay.innerHTML = `<span style="color: #E53935;">API 錯誤: ${result.error.message}</span>`;
+        } else {
+            textDisplay.innerText = "沒有聽清楚，請再說一次。";
+        }
+    } catch (error) {
+        textDisplay.innerHTML = `<span style="color: #E53935;">網路連線錯誤</span>`;
+    }
+}
+
+function toggleRecording() {
+    if (!mediaRecorder) return;
+    
+    if (!isRecording) {
+        mediaRecorder.start();
+        isRecording = true;
+        recordBtn.classList.add('recording');
+        recordBtn.innerText = '停止並辨識';
+        textDisplay.innerHTML = `<span style="color: #E53935;">聆聽中...</span>`;
+    } else {
+        mediaRecorder.stop();
+        isRecording = false;
+        recordBtn.classList.remove('recording');
+        recordBtn.innerText = '按住說話 (或點擊)';
+    }
+}
+
+recordBtn.addEventListener('click', () => {
+    if (!mediaRecorder) initAudio();
+    else toggleRecording();
+});
+
+window.addEventListener('load', initAudio);
     </script>
 </body>
 </html>
