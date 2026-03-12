@@ -3,13 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>AI 語音溝通板 Pro</title>
+    <title>AI 語音溝通板 (Gemini 專用版)</title>
     <style>
         :root {
             --bg-color: #0F0F0F;
             --text-color: #F0F0F0;
-            --accent-openai: #10a37f;
-            --accent-gemini: #4285f4;
+            --accent-color: #4285f4; /* Google Blue */
             --btn-recording: #FF3B30;
         }
         body {
@@ -17,46 +16,193 @@
             font-family: system-ui, -apple-system, 'PingFang TC', sans-serif;
             display: flex; flex-direction: column; height: 100vh; overflow: hidden;
         }
+        
+        /* 系統狀態列 */
         #header {
-            display: flex; justify-content: space-around; padding: 15px;
-            background: #1A1A1A; border-bottom: 1px solid #333; z-index: 10;
+            padding: 10px; background: #1A1A1A; border-bottom: 1px solid #333; 
+            text-align: center; color: #888; font-size: 14px; font-weight: bold;
+            display: flex; justify-content: space-between; align-items: center;
         }
-        .provider-btn {
-            padding: 10px 20px; border-radius: 20px; border: 2px solid transparent;
-            background: #333; color: #AAA; font-weight: bold; cursor: pointer; transition: 0.2s;
+        
+        #clear-keys {
+            color: #AAA; text-decoration: underline; cursor: pointer; padding: 5px 10px;
         }
-        .provider-btn.active[data-type="openai"] { border-color: var(--accent-openai); color: white; background: #154d3f; }
-        .provider-btn.active[data-type="gemini"] { border-color: var(--accent-gemini); color: white; background: #1a3a6d; }
 
-        /* 文字顯示區域：核心更新 */
+        /* 動態文字顯示區域 */
         #text-container {
             flex: 1; padding: 5vw; display: flex; align-items: center; justify-content: center;
-            overflow: hidden; /* 防止出現滾動條影響計算 */
-            text-align: center; word-break: break-all;
+            overflow: hidden; text-align: center; word-break: break-all;
         }
         #text-display {
-            width: 100%;
-            font-weight: 700;
-            transition: font-size 0.2s ease-out; /* 縮放時平滑過度 */
+            width: 100%; font-weight: 700; transition: font-size 0.2s ease-out;
         }
 
+        /* 底部控制區 */
         #controls {
-            padding: 30px; background: #1A1A1A; display: flex; flex-direction: column; align-items: center;
-            box-shadow: 0 -10px 20px rgba(0,0,0,0.3);
+            padding: 30px; background: #1A1A1A; display: flex; justify-content: center;
+            box-shadow: 0 -10px 20px rgba(0,0,0,0.3); padding-bottom: calc(30px + env(safe-area-inset-bottom));
         }
         #record-btn {
             width: 85vw; max-width: 500px; height: 100px; border-radius: 50px;
             border: none; font-size: 28px; font-weight: 900; color: white;
-            background: var(--accent-openai); box-shadow: 0 4px 15px rgba(0,0,0,0.4);
+            background: var(--accent-color); box-shadow: 0 4px 15px rgba(0,0,0,0.4);
+            transition: all 0.2s ease;
         }
         #record-btn.recording { background: var(--btn-recording); animation: pulse 1s infinite; }
         @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(0.98); } 100% { transform: scale(1); } }
-        
-        #clear-keys { margin-top: 15px; color: #666; font-size: 14px; text-decoration: underline; cursor: pointer; }
     </style>
 </head>
 <body>
 
     <div id="header">
-        <div class="provider-btn active" data-type="openai">OpenAI (Whisper)</div>
-        <div
+        <span>核心引擎: Gemini 1.5 Flash</span>
+        <span id="clear-keys" onclick="clearKey()">重設金鑰</span>
+    </div>
+
+    <div id="text-container">
+        <div id="text-display">請點擊下方按鈕開始說話</div>
+    </div>
+
+    <div id="controls">
+        <button id="record-btn">按住說話 (或點擊)</button>
+    </div>
+
+    <script>
+        let mediaRecorder;
+        let audioChunks = [];
+        let isRecording = false;
+
+        const recordBtn = document.getElementById('record-btn');
+        const textDisplay = document.getElementById('text-display');
+        const textContainer = document.getElementById('text-container');
+
+        // 第一原理：動態字體縮放，確保資訊載體最大化且不溢出
+        function adjustFontSize() {
+            const text = textDisplay.innerText;
+            const len = text.length;
+            let fontSize;
+
+            if (len < 5) fontSize = 20;       
+            else if (len < 15) fontSize = 15; 
+            else if (len < 30) fontSize = 10; 
+            else if (len < 60) fontSize = 7;  
+            else fontSize = 5;                
+
+            textDisplay.style.fontSize = fontSize + "vw";
+            
+            while (textDisplay.offsetHeight > textContainer.offsetHeight * 0.9 && fontSize > 3) {
+                fontSize -= 0.5;
+                textDisplay.style.fontSize = fontSize + "vw";
+            }
+        }
+
+        window.addEventListener('resize', adjustFontSize);
+
+        function updateText(msg) {
+            textDisplay.innerText = msg;
+            adjustFontSize();
+        }
+
+        // 金鑰存取邏輯
+        const getApiKey = () => {
+            const key = localStorage.getItem('gemini_api_key');
+            if (!key) {
+                const input = prompt("請輸入 Google Gemini API Key:\n(僅儲存於本機端)");
+                if (input && input.startsWith('AIza')) {
+                    localStorage.setItem('gemini_api_key', input);
+                    return input;
+                } else {
+                    alert("金鑰格式錯誤，請重新整理網頁。");
+                    return null;
+                }
+            }
+            return key;
+        };
+
+        const clearKey = () => {
+            localStorage.removeItem('gemini_api_key');
+            alert('金鑰已清除');
+            location.reload();
+        };
+
+        // 音訊初始化與編碼
+        async function initAudio() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+                mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+                mediaRecorder.onstop = async () => {
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                    audioChunks = [];
+                    await processWithGemini(audioBlob);
+                };
+            } catch (e) {
+                updateText("系統錯誤：麥克風授權失敗");
+                console.error(e);
+            }
+        }
+
+        // Gemini 專用 API 呼叫邏輯
+        async function processWithGemini(blob) {
+            const apiKey = getApiKey();
+            if (!apiKey) return;
+            
+            updateText("AI 解析語意中...");
+
+            const reader = new FileReader();
+            reader.readAsDataURL(blob);
+            reader.onloadend = async () => {
+                const base64Data = reader.result.split(',')[1];
+                const payload = {
+                    contents: [{
+                        parts: [
+                            { text: "這是一段台灣口音的語音，可能夾雜英文。請轉錄為繁體中文，只需輸出結果，確保語句通順，不需加入任何額外的解釋或說明標籤。" },
+                            { inline_data: { mime_type: "audio/webm", data: base64Data } }
+                        ]
+                    }]
+                };
+
+                try {
+                    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    
+                    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+                    
+                    const data = await res.json();
+                    
+                    if (data.candidates && data.candidates[0].content.parts[0].text) {
+                        const text = data.candidates[0].content.parts[0].text.trim();
+                        updateText(text);
+                    } else {
+                        updateText("無法解析語音，請再說一次。");
+                    }
+                } catch (e) { 
+                    updateText("網路連線或 API 金鑰錯誤"); 
+                    console.error(e);
+                }
+            };
+        }
+
+        // 狀態機控制
+        recordBtn.addEventListener('click', async () => {
+            if (!mediaRecorder) await initAudio();
+            if (!mediaRecorder) return; // 權限被拒絕時中止
+
+            if (!isRecording) {
+                mediaRecorder.start();
+                recordBtn.innerText = "停止錄音";
+                recordBtn.classList.add('recording');
+                updateText("正在聆聽...");
+            } else {
+                mediaRecorder.stop();
+                recordBtn.innerText = "按住說話 (或點擊)";
+                recordBtn.classList.remove('recording');
+            }
+            isRecording = !isRecording;
+        });
+    </script>
+</body>
+</html>
