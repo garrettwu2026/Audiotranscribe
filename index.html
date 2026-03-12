@@ -44,15 +44,29 @@
             width: 100%; font-weight: 700; transition: font-size 0.2s ease-out;
         }
 
-        /* 底部控制區 */
+        /* 底部控制區：縮減上下留白 */
         #controls {
-            padding: 30px; background: #1A1A1A; display: flex; justify-content: center;
-            box-shadow: 0 -10px 20px rgba(0,0,0,0.3); padding-bottom: calc(30px + env(safe-area-inset-bottom));
+            padding: 15px 20px; 
+            background: #1A1A1A; 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center;
+            box-shadow: 0 -5px 15px rgba(0,0,0,0.3); 
+            padding-bottom: calc(15px + env(safe-area-inset-bottom));
         }
+
+        /* 錄音按鈕：縮小體積但維持膠囊比例 */
         #record-btn {
-            width: 85vw; max-width: 500px; height: 100px; border-radius: 50px;
-            border: none; font-size: 28px; font-weight: 900; color: white;
-            background: var(--accent-openai); box-shadow: 0 4px 15px rgba(0,0,0,0.4);
+            width: 60vw; /* 從 85vw 縮小，釋放兩側空間 */
+            max-width: 300px; 
+            height: 70px; /* 從 100px 降低，釋放垂直閱讀空間 */
+            border-radius: 35px; /* 配合高度調整圓角 */
+            border: none; 
+            font-size: 22px; /* 字體微調縮小 */
+            font-weight: 900; 
+            color: white;
+            background: var(--accent-openai); 
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3); /* 減輕陰影重量感 */
             transition: all 0.2s ease;
         }
         #record-btn.recording { background: var(--btn-recording); animation: pulse 1s infinite; }
