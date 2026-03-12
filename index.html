@@ -99,7 +99,6 @@
         const textDisplay = document.getElementById('text-display');
         const textContainer = document.getElementById('text-container');
 
-        // 第一原理：動態字體縮放
         function adjustFontSize() {
             const text = textDisplay.innerText;
             const len = text.length;
@@ -126,7 +125,6 @@
             adjustFontSize();
         }
 
-        // 引擎切換邏輯
         document.querySelectorAll('.provider-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 document.querySelectorAll('.provider-btn').forEach(b => b.classList.remove('active'));
@@ -137,7 +135,6 @@
             });
         });
 
-        // 金鑰管理邏輯
         const getApiKey = () => {
             const key = localStorage.getItem(`${currentProvider}_api_key`);
             if (!key) {
@@ -160,14 +157,15 @@
             location.reload();
         };
 
-        // 音訊初始化
         async function initAudio() {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
                 mediaRecorder = new MediaRecorder(stream);
                 mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
                 mediaRecorder.onstop = async () => {
-                    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                    // 【修正點 1】動態獲取瀏覽器真實錄音格式 (解決 iOS/Android 格式差異)
+                    const actualMimeType = mediaRecorder.mimeType || 'audio/webm';
+                    const audioBlob = new Blob(audioChunks, { type: actualMimeType });
                     audioChunks = [];
                     await processAudio(audioBlob);
                 };
@@ -177,7 +175,6 @@
             }
         }
 
-        // 路由分發器
         async function processAudio(blob) {
             const apiKey = getApiKey();
             if (!apiKey) return;
@@ -191,10 +188,9 @@
             }
         }
 
-        // OpenAI Whisper 模組
         async function callOpenAI(blob, key) {
             const formData = new FormData();
-            formData.append('file', blob, 'audio.webm');
+            formData.append('file', blob, 'audio.webm'); // OpenAI 隨便塞個檔名即可
             formData.append('model', 'whisper-1');
             formData.append('language', 'zh');
             formData.append('prompt', '繁體中文，台灣口音，中英夾雜。');
@@ -209,27 +205,25 @@
                 const data = await res.json();
                 updateText(data.text || "未能辨識文字");
             } catch (e) { 
-                updateText("OpenAI 連線錯誤或金鑰無效"); 
-                console.error(e);
+                updateText("OpenAI 連線錯誤"); 
             }
         }
 
-        // Google Gemini 模組 (已修正 JSON Schema 與動態 MIME Type)
         async function callGemini(blob, key) {
             const reader = new FileReader();
             reader.readAsDataURL(blob);
             reader.onloadend = async () => {
                 const base64Data = reader.result.split(',')[1];
                 
-                // 動態取得正確的 MIME Type，避免 iOS/Android 格式不相容
-                const actualMimeType = mediaRecorder.mimeType || 'audio/webm';
+                // 【修正點 2】淨化 MIME Type：去除 ';codecs=opus' 等 Google 拒收的後綴
+                let cleanMimeType = blob.type.split(';')[0];
+                if (!cleanMimeType) cleanMimeType = 'audio/webm';
 
                 const payload = {
                     contents: [{
                         parts: [
                             { text: "這是一段台灣口音的語音，可能夾雜英文。請轉錄為繁體中文，只需輸出結果，確保語句通順，不需加入任何額外的解釋或說明標籤。" },
-                            // 修正：Google API 嚴格要求 camelCase (inlineData, mimeType)
-                            { inlineData: { mimeType: actualMimeType, data: base64Data } }
+                            { inlineData: { mimeType: cleanMimeType, data: base64Data } }
                         ]
                     }]
                 };
@@ -241,9 +235,10 @@
                         body: JSON.stringify(payload)
                     });
                     
+                    // 【修正點 3】穿透式錯誤報告：若 Google 拒絕，直接顯示拒絕理由
                     if (!res.ok) {
-                        const errorMsg = await res.text();
-                        throw new Error(`API 錯誤碼: ${res.status}, 詳情: ${errorMsg}`);
+                        const errorData = await res.json();
+                        throw new Error(errorData.error?.message || `HTTP ${res.status}`);
                     }
                     
                     const data = await res.json();
@@ -253,15 +248,16 @@
                         updateText("無法解析語音，請再說一次。");
                     }
                 } catch (e) { 
-                    updateText("Gemini 連線錯誤，請檢查網路或金鑰。"); 
-                    console.error("Gemini 核心錯誤:", e);
+                    // 將真實的 Google 報錯訊息印在畫面上
+                    updateText(`Gemini 錯誤: ${e.message}`); 
+                    console.error("Gemini API Error:", e);
                 }
             };
         }
-        // 狀態機控制
+
         recordBtn.addEventListener('click', async () => {
             if (!mediaRecorder) await initAudio();
-            if (!mediaRecorder) return; // 若無麥克風權限則中止
+            if (!mediaRecorder) return; 
 
             if (!isRecording) {
                 mediaRecorder.start();
